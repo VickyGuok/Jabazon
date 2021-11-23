@@ -1,5 +1,8 @@
 
+import static androidx.constraintlayout.helper.widget.MotionEffect.TAG;
+
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -10,11 +13,12 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.text.method.HideReturnsTransformationMethod;
 import android.text.method.PasswordTransformationMethod;
+import android.util.Log;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -26,9 +30,21 @@ import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.AuthResult;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.firestore.CollectionReference;
 import com.google.firebase.firestore.DocumentReference;
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.QueryDocumentSnapshot;
+import com.google.firebase.firestore.QuerySnapshot;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -38,6 +54,7 @@ public class SignUpAdmin extends AppCompatActivity {
 
     EditText edittextUsername;
     EditText edittextPassword;
+    EditText edittextHealthcareAddress;
     EditText edittextAddHealthcareCentreName;
     EditText edittextAddHealthcareCentreAddress;
     EditText edittextAdminEmail;
@@ -46,10 +63,14 @@ public class SignUpAdmin extends AppCompatActivity {
     Pattern PASSWORD_PATTERN = Pattern.compile("[a-zA-Z0-9\\!\\@\\#\\$\\*]{3,24}");
     String emailPattern = "[a-zA-Z0-9._-]+@[a-z]+\\.+[com]+";
     String usernamePattern = "[a-zA-z0-9._-]+@[jabazonAdmin]+\\.+[com]+";
-    Spinner healthCareCentreSpinner;
-    boolean isUsernameValid,isPasswordValid,isAdminEmailValid,isStaffIDValid,isHealthCareSpinnerValid;
-    FirebaseAuth mAuth = FirebaseAuth.getInstance();
+    boolean isUsernameValid,isPasswordValid,isAdminEmailValid,isStaffIDValid,isHealthCareSpinnerValid,isAdditionalHCValid;
     FirebaseFirestore fbfs = FirebaseFirestore.getInstance();
+    FirebaseAuth mAuth = FirebaseAuth.getInstance();
+    String HCName;
+    HealthcareCentres healthcareCentres;
+    String item;
+    DatabaseReference db = FirebaseDatabase.getInstance().getReference();
+    String healthcareAddress;
 
 
 
@@ -65,10 +86,40 @@ public class SignUpAdmin extends AppCompatActivity {
         edittextAdminEmail = findViewById(R.id.edit_text_Aemail);
         edittextAdminStaffID = findViewById(R.id.edit_text_AstaffID);
         textViewHealthcareCentre = findViewById(R.id.text_view_select_healthcare_centre);
-        healthCareCentreSpinner = findViewById(R.id.spinner_healthcareCentres);
-        ArrayAdapter adapter = ArrayAdapter.createFromResource(this, R.array.healthcareCentres, android.R.layout.simple_spinner_item);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        healthCareCentreSpinner.setAdapter(adapter);
+
+        CollectionReference cfHealthcare = fbfs.collection("Healthcare");
+        Spinner HealthcareChosen = findViewById(R.id.spinner_healthcareCentres);
+        final ArrayList<String> healthcare = new ArrayList<>();
+        ArrayList<String> healthcareListName = new ArrayList<String>();
+        ArrayAdapter<String>healthcareArrayAdapter = new ArrayAdapter<String>(SignUpAdmin.this, android.R.layout.simple_spinner_item,healthcareListName);
+        healthcareArrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        HealthcareChosen.setAdapter(healthcareArrayAdapter);
+        cfHealthcare.get().addOnCompleteListener(new OnCompleteListener<QuerySnapshot>() {
+            @Override
+            public void onComplete(@NonNull Task<QuerySnapshot> task) {
+                if(task.isSuccessful()){
+                    for(QueryDocumentSnapshot document: task.getResult()){
+                        HCName = document.getString("centreName");
+                        healthcareListName.add(HCName);
+                        healthcare.add(HCName);
+                    }
+                    healthcareArrayAdapter.notifyDataSetChanged();
+                }
+            }
+        });
+        HealthcareChosen.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
+                item = String.valueOf(adapterView.getItemAtPosition(i));
+                Log.d("TAG", ""+item);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> adapterView) {
+                Toast.makeText(SignUpAdmin.this, "Please select ",Toast.LENGTH_LONG).show();
+            }
+        });
+
     }
     private void checkDataValidation(){
         //to check if username is valid
@@ -110,10 +161,11 @@ public class SignUpAdmin extends AppCompatActivity {
         else{
             isStaffIDValid = true;
         }
-        if(healthCareCentreSpinner.getSelectedItem().equals("Select One")){
-            textViewHealthcareCentre.setError("Please select one healthcare centres");
+        if(item.equals("Add Healthcare")){
+            Toast.makeText(SignUpAdmin.this,"Please select one healthcare centre",Toast.LENGTH_SHORT).show();
             isHealthCareSpinnerValid = false;
-        }else if (healthCareCentreSpinner.getSelectedItem().equals("Add new healthcare centre")){
+        }else if (item.equals("Add Healthcare") && edittextAddHealthcareCentreAddress.getText().toString().isEmpty() &&
+                edittextAddHealthcareCentreName.getText().toString().isEmpty()){
             edittextAddHealthcareCentreName.setText("");
             edittextAddHealthcareCentreName.requestFocus();
             edittextAddHealthcareCentreAddress.setText("");
@@ -124,7 +176,49 @@ public class SignUpAdmin extends AppCompatActivity {
             isHealthCareSpinnerValid = true;
         }
 
-        if(isUsernameValid&&isPasswordValid&&isAdminEmailValid && isStaffIDValid&&isHealthCareSpinnerValid){
+        if((!edittextAddHealthcareCentreName.getText().toString().isEmpty()) && (!edittextAddHealthcareCentreAddress.getText().toString().isEmpty())){
+            if(healthcareCentres == null){
+                DocumentReference newHCRef = fbfs.collection("Healthcare").document();
+                healthcareCentres = new HealthcareCentres();
+                healthcareCentres.setCentreName(edittextAddHealthcareCentreName.getText().toString());
+                healthcareCentres.setCentreAddress(edittextAddHealthcareCentreAddress.getText().toString());
+
+                fbfs.collection("Healthcare")
+                        .document(healthcareCentres.getCentreName())
+                        .set(healthcareCentres)
+                        .addOnSuccessListener(new OnSuccessListener<Void>() {
+                            @Override
+                            public void onSuccess(Void unused) { finish(); }
+                        })
+                        .addOnFailureListener(new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                Toast.makeText(SignUpAdmin.this, e.getMessage(), Toast.LENGTH_SHORT).show();
+                            }
+                        });
+            } else{
+                DocumentReference HCRef = fbfs.collection("Healthcare")
+                        .document(healthcareCentres.getCentreName());
+                HCRef.update("centreName", edittextAddHealthcareCentreName.getText().toString(),
+                        "centreAddress", edittextAddHealthcareCentreAddress.getText().toString())
+                        .addOnSuccessListener(new OnSuccessListener<Void>() {
+                            @Override
+                            public void onSuccess(Void unused) { finish();
+                            }
+                        })
+                        .addOnFailureListener(new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                Toast.makeText(SignUpAdmin.this, e.getMessage(), Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                }
+            isAdditionalHCValid = true;
+        }else{
+            isAdditionalHCValid = false;
+        }
+
+        if(isUsernameValid && isPasswordValid&&isAdminEmailValid && isStaffIDValid&&isHealthCareSpinnerValid && isAdditionalHCValid){
             AlertDialog.Builder ADBuilder2 = new AlertDialog.Builder(this);
             ADBuilder2.setTitle("Account created successfully");
             ADBuilder2.setMessage("Account has been created! Please proceed to login");
@@ -155,7 +249,7 @@ public class SignUpAdmin extends AppCompatActivity {
                                 Map<String, Object> userInfo = new HashMap<>();
                                 userInfo.put("Username ", edittextUsername.getText().toString());
                                 userInfo.put("Password", edittextPassword.getText().toString());
-                                userInfo.put("Healthcare centre name", healthCareCentreSpinner.getSelectedItem().toString());
+                                userInfo.put("Healthcare centre name", item);
                                 userInfo.put("Staff ID", edittextAdminStaffID.getText().toString());
                                 userInfo.put("Email", edittextAdminEmail.getText().toString());
                                 //to specify user is admin
@@ -172,6 +266,7 @@ public class SignUpAdmin extends AppCompatActivity {
                 }
             });
     }
+    
     private void hideKeyboard(Context context, View view){
         InputMethodManager imm = (InputMethodManager) context.getSystemService(Activity.INPUT_METHOD_SERVICE);
         imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
